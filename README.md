@@ -187,6 +187,8 @@ Agent 只進行原始碼與後端契約的唯讀核對；本批未執行 Gradle�
 
 推送 `vMAJOR.MINOR.PATCH` 標籤會觸發 `.github/workflows/release.yml`，以 Java 17 執行 `:app:assembleDebug`，核對標籤與 `versionName` 相符，再使用 `docs/releases/<標籤>.md` 建立 Pre-release，附上 APK 與 SHA-256 校驗檔。此流程使用工作流程內建的 `GITHUB_TOKEN`，不需在程式碼放置個人 token，也不發布到 Google Play。失敗可從 Actions 手動重新執行該次工作流程；不以建置已觸發冒充成功完成。
 
+若 GitHub 未替首次推送產生建置紀錄，可在 Actions 的「Build Android prerelease」選擇「Run workflow」，使用 main 分支的工作流程並輸入既有標籤（例如 `v0.1.0`）；流程會 checkout 該標籤的原始碼再建置，不移動或覆寫標籤。未來正常發布仍只需推送對應標籤。
+
 目前為 CI Debug 簽章，與本機或後續建置的簽章可能不同；正式固定簽章另行規劃，暫不保證可覆蓋更新。App 的版本號仍由 `app/build.gradle.kts` 管理，未來發布前應更新 versionCode／versionName、準備對應版本說明並確認驗證結果，再推送標籤。
 
 本次發布準備修改 `.gitignore`（排除參考庫、憑證及本機資料）、`AGENTS.md`、`README.md`，新增 `.github/workflows/release.yml` 與 `docs/releases/v0.1.0.md`。後端遠端 README 僅追加 App 倉庫連結；本機 `.backend-reference/OmniChat` 維持唯讀。不變更 App 功能、API 或部署；保留舊測試服務程式及範例設定，實際 `.env` 與資料不提交。自動測試、lint 及 CI APK 實機驗收未由 Agent 執行。

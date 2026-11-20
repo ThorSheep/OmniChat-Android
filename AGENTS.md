@@ -440,6 +440,7 @@ domain／data 行為測試至少逐步涵蓋：
 - 使用者已驗證目前功能並核准 Public 倉庫 `ThorSheep/OmniChat-Android`、首次提交與 `v0.1.0` 標籤。
 - 使用者指定只推送標籤，由 GitHub Actions 建置 Debug APK 並建立 Pre-release；不等待雲端建置完成，不上傳本機 APK。最終 APK 由使用者手動驗收，工作流程已觸發不等於建置成功。
 - 工作流程使用 Java 17 與 `:app:assembleDebug`，標籤須與 versionName 相符，使用 `docs/releases/<標籤>.md` 並發布 APK 與 SHA-256 校驗檔。發布使用內建 GITHUB_TOKEN 的 contents: write，不建立或提交個人 token。
+- 若首次推送未產生建置紀錄，可使用 workflow_dispatch 輸入既有標籤，從 main 的工作流程 checkout 該標籤建置；不移動標籤，不改 App 程式或上傳本機 APK。
 - 公開提交前檢查完整檔案清單，排除後端參考 clone、實際 .env、local.properties、快取、建置產物、簽章私鑰與本機逐字稿／資料庫；只保留不含真實秘密的範例設定。
 - Android README 連向 `Evan1003/OmniChat`。使用者另行核准僅修改該後端遠端 README，追加 Android 倉庫連結；不得藉此改動後端程式、API、部署或本機參考 clone。後端仍是私人倉庫，連結不代表可公開讀取其內容。
 - Debug 簽章與正式固定發布簽章分開處理；目前不提交或上傳簽章金鑰，不承諾跨建置可直接覆蓋安裝，不新增商店發布流程。
