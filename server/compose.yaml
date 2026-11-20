@@ -1,0 +1,31 @@
+name: meeting-test
+
+services:
+  api:
+    build: ./api
+    restart: unless-stopped
+    volumes:
+      - transcript_data:/data
+    networks:
+      default:
+      existing_caddy:
+        aliases:
+          - meeting-api
+
+  duckdns:
+    image: curlimages/curl:8.11.1
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    environment:
+      DUCKDNS_DOMAIN: ${DUCKDNS_DOMAIN}
+      DUCKDNS_TOKEN: ${DUCKDNS_TOKEN}
+    command:
+      - 'while true; do curl -fsS "https://www.duckdns.org/update?domains=$$DUCKDNS_DOMAIN&token=$$DUCKDNS_TOKEN&ip="; sleep 300; done'
+
+volumes:
+  transcript_data:
+
+networks:
+  existing_caddy:
+    external: true
+    name: server_default

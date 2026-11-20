@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">OmniChat</string>
+    <string name="notification_channel_name">即時轉錄</string>
+    <string name="notification_title">正在轉錄討論語音</string>
+    <string name="notification_text">點選以回到 App，或使用「停止」結束收音。</string>
+    <string name="notification_stop">停止收音</string>
+</resources>
