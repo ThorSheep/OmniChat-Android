@@ -16,6 +16,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,7 +30,7 @@ import java.util.Locale
 /** Navigation changes visibility. Membership and microphone changes require explicit actions. */
 @Composable
 fun RemoteMeetingScreen(
-    account: AccountUiState, meeting: MeetingUiState, discussionVisible: Boolean,
+    account: AccountUiState, meeting: MeetingUiState, discussionVisible: Boolean, isForeground: Boolean = true,
     onSettings: () -> Unit, onMinimize: () -> Unit, onOpenDiscussion: () -> Unit, onLegacy: () -> Unit,
     onReload: () -> Unit, onJoin: (String) -> Unit, onLeave: () -> Unit,
     onAdd: (String) -> Unit, onRemove: (String) -> Unit,
@@ -47,17 +49,18 @@ fun RemoteMeetingScreen(
     var confirmLeave by remember(identity) { mutableStateOf(false) }
     var membersVisible by remember(identity) { mutableStateOf(false) }
     val identityMatches = user != null && account.selectedId == meeting.serverId && user.id == meeting.userId
-    val ready = identityMatches && !account.busy && !meeting.busy && !meeting.requiresLogin
+    val ready = isForeground && identityMatches && !account.busy && !meeting.busy && !meeting.requiresLogin
     val room = meeting.room
     val matchingTarget = identityMatches && room != null && discussion.target?.roomId == room.id &&
         discussion.target?.serverId == meeting.serverId && discussion.target?.userId == meeting.userId
     val canStart = ready && matchingTarget
 
-    BackHandler(enabled = discussionVisible && !transcript.visible) { onMinimize() }
+    BackHandler(enabled = isForeground && discussionVisible && !transcript.visible) { onMinimize() }
     if (discussionVisible && identityMatches && room != null) {
-        Column(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().clipToBounds()) {
+        Column(Modifier.fillMaxSize().then(if (transcript.visible) Modifier.clearAndSetSemantics { } else Modifier)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onMinimize) {
+                TextButton(enabled = isForeground, onClick = onMinimize) {
                     Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = null)
                     Text("收起")
                 }
@@ -105,7 +108,8 @@ fun RemoteMeetingScreen(
             }
             DiscussionCaptureControls(discussion, canStart, onStart, onStop)
         }
-        if (transcript.visible && matchingTarget) DiscussionTranscriptPanel(discussion, transcript, user?.id, canStart, onStart, onStop)
+        if (transcript.visible && matchingTarget && isForeground) DiscussionTranscriptPanel(discussion, transcript, user?.id, canStart, onStart, onStop)
+        }
     } else {
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 20.dp)) {
@@ -125,7 +129,7 @@ fun RemoteMeetingScreen(
                                     Text("目前已加入", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
                                     Box {
                                         IconButton(enabled = ready, onClick = { menuId = "current" }) { Icon(Icons.Outlined.MoreVert, contentDescription = "目前討論室選單") }
-                                        DropdownMenu(expanded = menuId == "current", onDismissRequest = { menuId = null }) {
+                                        DropdownMenu(expanded = isForeground && menuId == "current", onDismissRequest = { menuId = null }) {
                                             DropdownMenuItem(text = { Text("退出討論室") }, onClick = { menuId = null; confirmLeave = true })
                                         }
                                     }
@@ -172,7 +176,7 @@ fun RemoteMeetingScreen(
             }
         }
     }
-    if (membersVisible && discussionVisible) AlertDialog(onDismissRequest = { membersVisible = false },
+    if (isForeground && membersVisible && discussionVisible) AlertDialog(onDismissRequest = { membersVisible = false },
         title = { Text("在線成員（${discussion.online.size}）") }, text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (discussion.online.isEmpty()) Text("目前沒有在線名單，請確認連線狀態。")
@@ -181,7 +185,7 @@ fun RemoteMeetingScreen(
                 Text("加入時成員快照：${discussion.members.size} 人，包含不在線的成員。", style = MaterialTheme.typography.bodySmall)
             }
         }, confirmButton = { TextButton(onClick = { membersVisible = false }) { Text("關閉") } })
-    if (inputVisible && identityMatches) AlertDialog(onDismissRequest = { if (!meeting.busy) inputVisible = false },
+    if (isForeground && inputVisible && identityMatches) AlertDialog(onDismissRequest = { if (!meeting.busy) inputVisible = false },
         title = { Text("新增討論室入口") }, text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(code, { code = it.trim().uppercase(Locale.ROOT) }, label = { Text("六碼代碼") }, singleLine = true, enabled = ready)
@@ -213,7 +217,7 @@ fun RemoteMeetingScreen(
         confirmButton = { TextButton(onClick = { confirmLeave = false; onLeave() }) { Text("確認退出") } },
         dismissButton = { TextButton(onClick = { confirmLeave = false }) { Text("取消") } })
     meeting.pendingChangeCount?.let { count ->
-        AlertDialog(onDismissRequest = onCancelChange, title = { Text("還有 $count 段文字未送出") },
+        if (isForeground) AlertDialog(onDismissRequest = onCancelChange, title = { Text("還有 $count 段文字未送出") },
             text = { Text("收音已停止。繼續後文字保留於原房間，重新加入原討論室後才能重送。") },
             confirmButton = { TextButton(onClick = onConfirmChange) { Text("保留資料並繼續") } },
             dismissButton = { TextButton(onClick = onCancelChange) { Text("取消") } })

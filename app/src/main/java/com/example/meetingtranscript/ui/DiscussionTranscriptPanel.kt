@@ -1,7 +1,12 @@
 package com.example.meetingtranscript.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.clickable
@@ -19,10 +24,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.example.meetingtranscript.domain.*
 import java.time.Duration
 import java.time.Instant
@@ -59,6 +65,7 @@ fun rememberDiscussionTranscriptState(state: RemoteDiscussionState): DiscussionT
 fun DiscussionTranscriptPanel(state: RemoteDiscussionState, panel: DiscussionTranscriptState, currentUserId: String?,
     canStart: Boolean, onStart: () -> Unit, onStop: () -> Unit) {
     val transition = remember { MutableTransitionState(false).apply { targetState = true } }
+    val overlayTransition = updateTransition(transition, label = "Transcript panel")
     val scope = rememberCoroutineScope()
     var autoScrolling by remember { mutableStateOf(false) }
     val currentMessages by rememberUpdatedState(state.messages)
@@ -98,17 +105,23 @@ fun DiscussionTranscriptPanel(state: RemoteDiscussionState, panel: DiscussionTra
         }
     }
     fun close() { transition.targetState = false }
-    Dialog(onDismissRequest = ::close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Box(Modifier.fillMaxSize()) {
+    BackHandler { close() }
+    // The host page already applies Scaffold's system-bar padding. Inherit its exact bounds;
+    // a separate Dialog window would measure against a different available height.
+    Box(Modifier.fillMaxSize().clipToBounds().semantics { paneTitle = "逐字稿" }) {
+        overlayTransition.AnimatedVisibility(visible = { it }, modifier = Modifier.fillMaxSize(),
+            enter = fadeIn(tween(250)), exit = fadeOut(tween(250))) {
             Surface(color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f), modifier = Modifier.fillMaxSize()
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = ::close)) { }
-            AnimatedVisibility(visibleState = transition, modifier = Modifier.align(Alignment.CenterEnd),
-                enter = slideInHorizontally(initialOffsetX = { it }), exit = slideOutHorizontally(targetOffsetX = { it })) {
+        }
+        overlayTransition.AnimatedVisibility(visible = { it }, modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                enter = slideInHorizontally(animationSpec = tween(250), initialOffsetX = { it }),
+                exit = slideOutHorizontally(animationSpec = tween(250), targetOffsetX = { it })) {
                 Surface(modifier = Modifier.fillMaxWidth(0.9f).fillMaxHeight()
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
                     shape = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp),
                     shadowElevation = 12.dp) {
-                    Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                    Column(Modifier.fillMaxSize()) {
                         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text("逐字稿", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -149,7 +162,6 @@ fun DiscussionTranscriptPanel(state: RemoteDiscussionState, panel: DiscussionTra
                     }
                 }
             }
-        }
     }
 }
 

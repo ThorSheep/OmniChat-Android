@@ -12,6 +12,18 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +33,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -45,6 +58,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -134,6 +151,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
             var destination by rememberSaveable { mutableStateOf("rooms") }
+            var lastNonDiscussion by rememberSaveable { mutableStateOf("rooms") }
+            LaunchedEffect(destination) {
+                if (destination != "discussion") lastNonDiscussion = destination
+            }
+            val baseDestination = if (destination == "discussion") lastNonDiscussion else destination
             val activeRoom = meetingState.room?.takeIf {
                 signedIn != null && signedIn.user.id == meetingState.userId &&
                     accountState.selectedId == meetingState.serverId && !meetingState.requiresLogin
@@ -170,14 +192,35 @@ class MainActivity : ComponentActivity() {
                 }
             }
             MeetingAppTheme(state.themeMode) {
+                // Keep each Scaffold at its own final size during the vertical discussion transition.
+                // Inside the main Scaffold only the page content slides; the bottom navigation stays fixed.
+                val discussionTransition = updateTransition(destination == "discussion", label = "Discussion navigation")
+                val discussionSettled = !discussionTransition.isRunning && discussionTransition.currentState == discussionTransition.targetState
+                BackHandler(enabled = !discussionSettled && destination == "discussion") { minimizeDiscussion() }
+                discussionTransition.AnimatedContent(
+                    modifier = Modifier.fillMaxSize().clipToBounds(),
+                    transitionSpec = {
+                        if (targetState) ContentTransform(
+                            targetContentEnter = slideInVertically(tween(250)) { it },
+                            initialContentExit = ExitTransition.None,
+                            targetContentZIndex = 1f, sizeTransform = null,
+                        ) else ContentTransform(
+                            targetContentEnter = EnterTransition.None,
+                            initialContentExit = slideOutVertically(tween(250)) { it },
+                            targetContentZIndex = -1f, sizeTransform = null,
+                        )
+                    },
+                ) { showDiscussion ->
                 Scaffold(bottomBar = {
-                    if (destination != "discussion") Column {
+                    if (!showDiscussion) Column {
                     if (activeRoom != null) CompactDiscussionBar(
-                        discussionState.room?.takeIf { it.id == activeRoom.id }?.name ?: activeRoom.name, discussionState, openDiscussion)
+                        discussionState.room?.takeIf { it.id == activeRoom.id }?.name ?: activeRoom.name, discussionState,
+                        { if (discussionSettled) openDiscussion() })
                     NavigationBar {
                         listOf("rooms" to "討論室", "remote_history" to "紀錄", "settings" to "我的").forEach { (id, label) ->
                             val icon = when (id) { "remote_history" -> Icons.Outlined.History; "rooms" -> Icons.Outlined.Groups; else -> Icons.Outlined.Settings }
-                            NavigationBarItem(selected = destination == id || (id == "remote_history" && destination == "history"), onClick = {
+                            NavigationBarItem(selected = baseDestination == id || (id == "remote_history" && baseDestination == "history"),
+                                enabled = discussionSettled && destination != "discussion", onClick = {
                                 if (id == "remote_history" && destination != "remote_history") {
                                     remoteHistoryReturn = "rooms"
                                     historyModel.showRooms()
@@ -188,9 +231,32 @@ class MainActivity : ComponentActivity() {
                     }
                     }
                 }) { padding ->
-                    Column(Modifier.padding(padding)) {
-                        if (destination == "rooms") ServerShortcut(accountState) { destination = "settings" }
-                        Box(Modifier.weight(1f)) { when (destination) {
+                    AnimatedContent(
+                        targetState = if (showDiscussion) "discussion" else baseDestination,
+                        modifier = Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize().clipToBounds(),
+                        transitionSpec = {
+                            val from = navigationTabOrder(initialState)
+                            val to = navigationTabOrder(targetState)
+                            val forward = to > from
+                            ContentTransform(
+                                targetContentEnter = if (from == to) fadeIn(tween(250)) else
+                                    slideInHorizontally(tween(250)) { if (forward) it else -it } + fadeIn(tween(250)),
+                                initialContentExit = if (from == to) fadeOut(tween(250)) else
+                                    slideOutHorizontally(tween(250)) { if (forward) -it else it } + fadeOut(tween(250)),
+                                sizeTransform = null,
+                            )
+                        }, label = "Main pages",
+                    ) { page ->
+                    val isForeground = page == destination && discussionSettled
+                    val inactivePage = if (isForeground) Modifier else Modifier.clearAndSetSemantics { }
+                        .pointerInput(Unit) {
+                            awaitPointerEventScope {
+                                while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                            }
+                        }
+                    Column(Modifier.fillMaxSize().then(inactivePage)) {
+                        if (page == "rooms") ServerShortcut(accountState) { destination = "settings" }
+                        Box(Modifier.weight(1f)) { when (page) {
                         "remote_history" -> if (signedIn == null) Column(Modifier.padding(24.dp)) {
                             Text("討論紀錄", style = MaterialTheme.typography.headlineMedium)
                             Text("登入目前伺服器以查看遠端討論紀錄。", Modifier.padding(vertical = 16.dp))
@@ -210,7 +276,7 @@ class MainActivity : ComponentActivity() {
                             { destination = historyReturn },
                         )
                         "discussion", "rooms" -> RemoteMeetingScreen(
-                            account = accountState, meeting = meetingState, discussionVisible = destination == "discussion",
+                            account = accountState, meeting = meetingState, discussionVisible = page == "discussion", isForeground = isForeground,
                             onSettings = { destination = "settings" }, onMinimize = minimizeDiscussion,
                             onOpenDiscussion = openDiscussion,
                             onLegacy = { destination = "legacy_rooms" }, onReload = meetingModel::reload,
@@ -231,9 +297,9 @@ class MainActivity : ComponentActivity() {
                             onConfirmChange = meetingModel::confirmChange, onCancelChange = meetingModel::cancelChange,
                             onHistory = {
                                 val currentRoom = discussionState.room ?: meetingState.room
-                                remoteHistoryReturn = destination
+                                remoteHistoryReturn = page
                                 transcript.visible = false
-                                if (destination == "discussion" && currentRoom != null) historyModel.showRoom(currentRoom)
+                                if (page == "discussion" && currentRoom != null) historyModel.showRoom(currentRoom)
                                 else historyModel.showRooms()
                                 destination = "remote_history"
                             },
@@ -265,6 +331,8 @@ class MainActivity : ComponentActivity() {
                             { Thread { TranscriptOutbox(applicationContext).flush() }.start() }, accountState, accountModel)
                         else -> Text("請選擇下方功能。", Modifier.padding(24.dp))
                     } } }
+                    }
+                }
                 }
             }
         }
@@ -321,6 +389,12 @@ class MainActivity : ComponentActivity() {
     private fun stopTranscription() {
         startService(Intent(this, TranscriptionForegroundService::class.java).setAction(TranscriptionForegroundService.ACTION_STOP))
     }
+}
+
+private fun navigationTabOrder(destination: String): Int = when (destination) {
+    "remote_history", "history" -> 1
+    "settings" -> 2
+    else -> 0
 }
 
 @Composable
